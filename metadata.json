@@ -1,0 +1,6 @@
+{
+  "name": "Amilo Music",
+  "description": "Hermosa aplicación de música offline optimizada con diseño Material Design 3, animaciones suaves y un ecualizador adaptativo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Solid Black Background -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M0,0h108v108h-108z" />
+        
+    <!-- Music Note 🎵 with Blue to White Gradient -->
+    <group android:translateX="-16" android:translateY="-8">
+        <path
+            android:pathData="M 69.51,31 C 69.51,31 69.51,67.79 69.51,67.79 C 67.08,65.88 63.99,64.71 60.66,64.71 C 52.89,64.71 46.59,71.01 46.59,78.78 C 46.59,86.55 52.89,92.85 60.66,92.85 C 68.43,92.85 74.84,86.67 74.95,78.96 L 74.95,46 L 83,43 C 80,48 75,44 74.95,46 L 74.95,31 Z"
+            android:strokeWidth="1">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startY="31.0"
+                    android:startX="60.66"
+                    android:endY="92.85"
+                    android:endX="60.66"
+                    android:type="linear">
+                    <item android:color="#FFFFFF" android:offset="0.0" />
+                    <item android:color="#0066FF" android:offset="0.5" />
+                    <item android:color="#0022AA" android:offset="1.0" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <!-- Second note element -->
+        <path
+            android:pathData="M 74.95,46 C 85.88,44 90.88,48 93.88,57 L 93.88,43 C 88.88,35 80.39,31 80.39,31 Z"
+            android:strokeWidth="1">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startY="31.0"
+                    android:startX="84.0"
+                    android:endY="57.0"
+                    android:endX="84.0"
+                    android:type="linear">
+                    <item android:color="#FFFFFF" android:offset="0.0" />
+                    <item android:color="#0066FF" android:offset="0.5" />
+                    <item android:color="#0044CC" android:offset="1.0" />
+                </gradient>
+            </aapt:attr>
+        </path>
+    </group>
+</vector>
