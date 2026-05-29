@@ -48,6 +48,16 @@ class AudioPlaybackManager(
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var audioFocusRequest: AudioFocusRequest? = null
     private var onSongCompletedCallback: (() -> Unit)? = null
+    var isShuffleActive = false
+    private var isFadingOut = false
+
+    private val noisyReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(c: Context?, intent: Intent?) {
+            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                pause()
+            }
+        }
+    }
 
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         when (focusChange) {
@@ -94,6 +104,7 @@ class AudioPlaybackManager(
 
     init {
         startProgressTracker()
+        context.registerReceiver(noisyReceiver, android.content.IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY))
     }
 
     private fun startPlaybackService() {
@@ -170,6 +181,8 @@ class AudioPlaybackManager(
                     }
 
                     mediaPlayer = localMp
+                    localMp.setVolume(1.0f, 1.0f)
+                    isFadingOut = false
                     
                     _playbackDuration.value = localMp.duration.toLong()
                     equalizerManager.initEqualizer(localMp.audioSessionId)
@@ -273,6 +286,21 @@ class AudioPlaybackManager(
                                 if (mp.isPlaying) {
                                     val currentPos = mp.currentPosition.toLong()
                                     _playbackProgress.value = currentPos
+                                    
+                                    if (isShuffleActive && mp.duration > 8000 && mp.duration - currentPos <= 6000 && !isFadingOut) {
+                                        isFadingOut = true
+                                        fadeJob?.cancel()
+                                        fadeJob = scope.launch(Dispatchers.Main) {
+                                            val steps = 30
+                                            val interval = 6000L / steps
+                                            for (i in steps downTo 0) {
+                                                if (!mp.isPlaying) break
+                                                val vol = i.toFloat() / steps
+                                                mp.setVolume(vol, vol)
+                                                delay(interval)
+                                            }
+                                        }
+                                    }
                                 }
                             } catch (e: Exception) {
                                 // Ignore state issues
@@ -302,6 +330,9 @@ class AudioPlaybackManager(
 
     fun release() {
         scope.cancel()
+        try {
+            context.unregisterReceiver(noisyReceiver)
+        } catch (e: Exception) {}
         stopMediaPlayer()
         ambientSynthesizer.stop()
     }

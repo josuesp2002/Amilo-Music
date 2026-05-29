@@ -62,6 +62,7 @@ import com.example.database.SongEntity
 import com.example.viewmodel.MusicPlayerViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.ui.graphics.asAndroidBitmap
 import kotlin.math.sin
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,7 +76,7 @@ fun HomeScreen(viewModel: MusicPlayerViewModel) {
     var isPlayerExpanded by remember { mutableStateOf(false) }
     var isSearchExpanded by remember { mutableStateOf(false) }
 
-    val isDarkTheme = androidx.compose.foundation.isSystemInDarkTheme()
+    val isDarkTheme by viewModel.isDarkMode.collectAsStateWithLifecycle()
     val view = androidx.compose.ui.platform.LocalView.current
     if (!view.isInEditMode) {
         androidx.compose.runtime.SideEffect {
@@ -92,6 +93,12 @@ fun HomeScreen(viewModel: MusicPlayerViewModel) {
     }
 
     // Permission handle logic
+    if (isPlayerExpanded) {
+        androidx.activity.compose.BackHandler {
+            isPlayerExpanded = false
+        }
+    }
+    
     val permissionsToRequest = mutableListOf<String>()
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         permissionsToRequest.add(Manifest.permission.READ_MEDIA_AUDIO)
@@ -106,10 +113,13 @@ fun HomeScreen(viewModel: MusicPlayerViewModel) {
         val audioGranted = permissions[Manifest.permission.READ_MEDIA_AUDIO] == true || permissions[Manifest.permission.READ_EXTERNAL_STORAGE] == true
         if (audioGranted) {
             viewModel.scanLocalSongs(context)
-            Toast.makeText(context, "Permisos concedidos. Escaneando archivos...", Toast.LENGTH_SHORT).show()
         } else {
             Toast.makeText(context, "Permiso de almacenamiento denegado.", Toast.LENGTH_LONG).show()
         }
+    }
+
+    LaunchedEffect(Unit) {
+        launcher.launch(permissionsToRequest.toTypedArray())
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -173,8 +183,8 @@ fun HomeScreen(viewModel: MusicPlayerViewModel) {
                         .wrapContentWidth()
                         .clip(RoundedCornerShape(32.dp))
                         .border(
-                            width = 1.dp,
-                            color = if (isDark) Color.White.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.5f), // Glassmorphism reflection
+                            width = 0.5.dp,
+                            color = if (isDarkTheme) Color.White.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.1f), // Glassmorphism reflection
                             shape = RoundedCornerShape(32.dp)
                         )
                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)) // Semitransparent background
@@ -224,8 +234,8 @@ fun HomeScreen(viewModel: MusicPlayerViewModel) {
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                         .border(
-                            width = 1.dp,
-                            color = if (isDark) Color.White.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.5f),
+                            width = 0.5.dp,
+                            color = if (isDarkTheme) Color.White.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.1f),
                             shape = CircleShape
                         )
                         .padding(2.dp)
@@ -295,6 +305,7 @@ fun HomeScreen(viewModel: MusicPlayerViewModel) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryPage(viewModel: MusicPlayerViewModel, isSearchExpanded: Boolean, onSearchClose: () -> Unit, onScanRequested: () -> Unit) {
+    val context = LocalContext.current
     val songs by viewModel.allSongs.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val currentSong by viewModel.currentSong.collectAsStateWithLifecycle()
@@ -346,15 +357,15 @@ fun LibraryPage(viewModel: MusicPlayerViewModel, isSearchExpanded: Boolean, onSe
             }
 
             IconButton(
-                onClick = onScanRequested,
+                onClick = { viewModel.toggleDarkMode() },
                 modifier = Modifier
                     .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
                     .border(1.dp, MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f), CircleShape)
-                    .testTag("scan_button")
             ) {
+                val isDarkTheme by viewModel.isDarkMode.collectAsStateWithLifecycle()
                 Icon(
-                    imageVector = Icons.Rounded.Refresh,
-                    contentDescription = "Escanear música local",
+                    imageVector = if (isDarkTheme) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+                    contentDescription = "Cambiar Tema",
                     tint = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
@@ -399,7 +410,7 @@ fun LibraryPage(viewModel: MusicPlayerViewModel, isSearchExpanded: Boolean, onSe
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 16.dp),
+                contentPadding = PaddingValues(bottom = 120.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(filteredSongs, key = { it.id }) { song ->
@@ -416,10 +427,10 @@ fun LibraryPage(viewModel: MusicPlayerViewModel, isSearchExpanded: Boolean, onSe
                         onFavoriteToggle = { viewModel.requestToggleFavorite(song) },
                         onAddToPlaylist = { viewModel.openAddToPlaylistDialog(song) },
                         onEditMetadata = { viewModel.openEditMetadataDialog(song) },
-                        onDeleteSong = { viewModel.deleteSong(song) },
+                        onDeleteSong = { viewModel.deleteSong(song, context) },
                         onViewArtist = { viewModel.updateSearchQuery(song.artist) },
                         onViewAlbum = { viewModel.updateSearchQuery(song.album) },
-                        onNoRecommend = { viewModel.deleteSong(song) }
+                        onNoRecommend = { viewModel.blacklistSong(song) }
                     )
                 }
             }
@@ -476,6 +487,7 @@ fun EmptyLibraryState(onScanRequested: () -> Unit) {
 // PLAYLISTS PAGE
 @Composable
 fun PlaylistsPage(viewModel: MusicPlayerViewModel) {
+    val context = LocalContext.current
     val playlists by viewModel.playlists.collectAsStateWithLifecycle()
     val selectedPlaylist by viewModel.selectedPlaylist.collectAsStateWithLifecycle()
     val songsInSelected by viewModel.songsInSelectedPlaylist.collectAsStateWithLifecycle()
@@ -581,10 +593,10 @@ fun PlaylistsPage(viewModel: MusicPlayerViewModel) {
                                 showRemove = true,
                                 onRemoveRequested = { viewModel.requestRemoveSongFromPlaylist(selectedPlaylist!!.id, song.id) },
                                 onEditMetadata = { viewModel.openEditMetadataDialog(song) },
-                                onDeleteSong = { viewModel.deleteSong(song) },
+                                onDeleteSong = { viewModel.deleteSong(song, context) },
                                 onViewArtist = { viewModel.updateSearchQuery(song.artist) },
                                 onViewAlbum = { viewModel.updateSearchQuery(song.album) },
-                                onNoRecommend = { viewModel.deleteSong(song) }
+                                onNoRecommend = { viewModel.blacklistSong(song) }
                             )
                         }
                     }
@@ -1251,14 +1263,26 @@ fun SongListItem(
             Spacer(modifier = Modifier.width(16.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = song.title,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = song.title,
+                        modifier = Modifier.weight(1f, fill = false),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                    )
+                    if (song.isFavorite) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Rounded.Favorite,
+                            contentDescription = "Favorito",
+                            tint = Color.Red,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(2.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (song.isDemo) {
@@ -1532,7 +1556,8 @@ fun EditMetadataDialog(
                     customFile.writeBytes(bytes)
                     val rawBitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                     rawBitmap?.asImageBitmap()?.let {
-                        coverCache.put(song.id, it) // update cache directly
+                        coverCache.put("${song.id}_small", it) 
+                        coverCache.put("${song.id}_large", it) 
                     }
                     Toast.makeText(context, "Portada actualizada", Toast.LENGTH_SHORT).show()
                 }
@@ -1681,22 +1706,26 @@ fun NowPlayingScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(
-                onClick = onCollapse,
-                modifier = Modifier
-                    .background(Color.White.copy(alpha = 0.1f), CircleShape)
-                    .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
-            ) {
-                Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Minimizar", tint = Color.White)
-            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = onCollapse,
+                    modifier = Modifier
+                        .background(Color.White.copy(alpha = 0.1f), CircleShape)
+                        .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
+                ) {
+                    Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Minimizar", tint = Color.White)
+                }
+                
+                Spacer(modifier = Modifier.width(12.dp))
 
-            Text(
-                text = "REPRODUCIENDO",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White.copy(alpha = 0.7f),
-                letterSpacing = 2.sp
-            )
+                Text(
+                    text = "REPRODUCIENDO",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White.copy(alpha = 0.7f),
+                    letterSpacing = 2.sp
+                )
+            }
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1962,19 +1991,59 @@ fun NowPlayingProgressSlider(viewModel: MusicPlayerViewModel) {
     val progressRatio = if (duration > 0) progress.toFloat() / duration else 0f
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        Slider(
-            value = progressRatio,
-            onValueChange = {
-                val seekTarget = (it * duration).toLong()
-                viewModel.seekTo(seekTarget)
-            },
-            modifier = Modifier.fillMaxWidth().testTag("now_playing_slider"),
-            colors = SliderDefaults.colors(
-                thumbColor = Color.White,
-                activeTrackColor = Color.White,
-                inactiveTrackColor = Color.White.copy(alpha = 0.25f)
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(16.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color.White.copy(alpha = 0.1f))
+                .border(0.5.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                .pointerInput(Unit) {
+                    detectTapGestures { offset ->
+                        val target = (offset.x / size.width).coerceIn(0f, 1f)
+                        viewModel.seekTo((target * duration).toLong())
+                    }
+                }
+                .pointerInput(Unit) {
+                    detectDragGestures { change, _ ->
+                        val target = (change.position.x / size.width).coerceIn(0f, 1f)
+                        viewModel.seekTo((target * duration).toLong())
+                    }
+                },
+            contentAlignment = androidx.compose.ui.Alignment.CenterStart
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(progressRatio.coerceIn(0f, 1f))
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        androidx.compose.ui.graphics.Brush.horizontalGradient(
+                            colors = listOf(
+                                Color(0xFF00E5FF).copy(alpha = 0.6f),
+                                Color(0xFF00E5FF)
+                            )
+                        )
+                    )
             )
-        )
+            // Liquid thumb glow
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(progressRatio.coerceIn(0f, 1f))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(16.dp)
+                        .align(androidx.compose.ui.Alignment.CenterEnd)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(Color.White)
+                        .scale(1.2f)
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(8.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
@@ -2005,8 +2074,8 @@ fun MiniPlayerBar(
             .widthIn(max = 360.dp)
             .clip(RoundedCornerShape(32.dp))
             .border(
-                width = 1.dp,
-                color = if (isDark) Color.White.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.5f), // Glassmorphism reflection
+                width = 0.5.dp,
+                color = if (isDark) Color.White.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.1f), // Glassmorphism reflection
                 shape = RoundedCornerShape(32.dp)
             )
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f))
@@ -2345,7 +2414,15 @@ fun PlaceholderCover(
     }
 }
 
-val coverCache = android.util.LruCache<String, androidx.compose.ui.graphics.ImageBitmap>(50)
+val maxMemoryKiloBytes = (Runtime.getRuntime().maxMemory() / 1024).toInt()
+val cacheSize = maxMemoryKiloBytes / 4 // Use 1/4th of the available memory for this memory cache.
+
+val coverCache = object : android.util.LruCache<String, androidx.compose.ui.graphics.ImageBitmap>(cacheSize) {
+    override fun sizeOf(key: String, bitmap: androidx.compose.ui.graphics.ImageBitmap): Int {
+        // The cache size will be measured in kilobytes rather than number of items.
+        return (bitmap.width * bitmap.height * 4) / 1024
+    }
+}
 
 @Composable
 fun SongCoverImage(
@@ -2355,13 +2432,17 @@ fun SongCoverImage(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var bitmap by remember(song.id) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(coverCache.get(song.id)) }
-    var loadedChecked by remember(song.id) { mutableStateOf(coverCache.get(song.id) != null) }
+    val isLarge = size == Dp.Unspecified || size.value > 80f
+    val cacheKey = if (isLarge) "${song.id}_large" else "${song.id}_small"
+    var bitmap by remember(song.id, isLarge) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(coverCache.get(cacheKey)) }
+    var loadedChecked by remember(song.id, isLarge) { mutableStateOf(coverCache.get(cacheKey) != null) }
 
-    LaunchedEffect(song.id, song.filePath) {
-        if (coverCache.get(song.id) == null) {
+    LaunchedEffect(song.id, song.filePath, isLarge) {
+        if (!isLarge) kotlinx.coroutines.delay(100) // Debounce rapid scrolling only for small
+        if (coverCache.get(cacheKey) == null) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 var newBitmap: androidx.compose.ui.graphics.ImageBitmap? = null
+                val targetDim = if (isLarge) 800 else 150
                 try {
                     val customFile = java.io.File(context.filesDir, "custom_cover_${song.id}.jpg")
                     if (customFile.exists()) {
@@ -2369,7 +2450,7 @@ fun SongCoverImage(
                         val opts = android.graphics.BitmapFactory.Options()
                         opts.inJustDecodeBounds = true
                         android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
-                        val maxDim = 400
+                        val maxDim = targetDim
                         var inSampleSize = 1
                         if (opts.outHeight > maxDim || opts.outWidth > maxDim) {
                             val halfHeight = opts.outHeight / 2
@@ -2398,7 +2479,7 @@ fun SongCoverImage(
                                 opts.inJustDecodeBounds = true
                                 android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
                                 
-                                val maxDim = 400
+                                val maxDim = targetDim
                                 var inSampleSize = 1
                                 if (opts.outHeight > maxDim || opts.outWidth > maxDim) {
                                     val halfHeight = opts.outHeight / 2
@@ -2419,7 +2500,7 @@ fun SongCoverImage(
                 }
                 
                 if (newBitmap != null) {
-                    coverCache.put(song.id, newBitmap)
+                    coverCache.put(cacheKey, newBitmap)
                 }
                 bitmap = newBitmap
                 loadedChecked = true

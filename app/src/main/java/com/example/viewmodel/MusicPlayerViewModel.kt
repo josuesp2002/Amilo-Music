@@ -24,12 +24,24 @@ class MusicPlayerViewModel(
     private val prefs: android.content.SharedPreferences
 ) : ViewModel() {
 
-    // Song Lists
-    val allSongs: StateFlow<List<SongEntity>> = repository.allSongs
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val _isDarkMode = MutableStateFlow(prefs.getBoolean("is_dark_mode", true))
+    val isDarkMode: StateFlow<Boolean> = _isDarkMode.asStateFlow()
 
-    val favoriteSongs: StateFlow<List<SongEntity>> = repository.favoriteSongs
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    fun toggleDarkMode() {
+        val newMode = !_isDarkMode.value
+        _isDarkMode.value = newMode
+        prefs.edit().putBoolean("is_dark_mode", newMode).apply()
+    }
+
+    private val _blacklistedSongs = MutableStateFlow(prefs.getStringSet("blacklisted_songs", mutableSetOf()) ?: mutableSetOf())
+
+    val allSongs: StateFlow<List<SongEntity>> = repository.allSongs.combine(_blacklistedSongs) { songs, blacklisted ->
+        songs.filterNot { it.id in blacklisted }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val favoriteSongs: StateFlow<List<SongEntity>> = repository.favoriteSongs.combine(_blacklistedSongs) { songs, blacklisted ->
+        songs.filterNot { it.id in blacklisted }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val playlists: StateFlow<List<PlaylistEntity>> = repository.allPlaylists
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -282,6 +294,7 @@ class MusicPlayerViewModel(
 
     fun toggleShuffle() {
         _isShuffleEnabled.value = !_isShuffleEnabled.value
+        playbackManager.isShuffleActive = _isShuffleEnabled.value
     }
 
     fun playNextTrack() {
@@ -390,8 +403,26 @@ class MusicPlayerViewModel(
         _songToEdit.value = song
     }
 
-    fun deleteSong(song: SongEntity) {
+    fun blacklistSong(song: SongEntity) {
+        val currentSet = _blacklistedSongs.value.toMutableSet()
+        currentSet.add(song.id)
+        _blacklistedSongs.value = currentSet
+        prefs.edit().putStringSet("blacklisted_songs", currentSet).apply()
+        
+        if (currentSong.value?.id == song.id) {
+            playNextTrack()
+        }
+    }
+
+    fun deleteSong(song: SongEntity, context: Context) {
         viewModelScope.launch {
+            try {
+                if (song.filePath.startsWith("content://")) {
+                    context.contentResolver.delete(android.net.Uri.parse(song.filePath), null, null)
+                } else {
+                    java.io.File(song.filePath).delete()
+                }
+            } catch (e: Exception) {}
             repository.deleteSong(song)
         }
     }
